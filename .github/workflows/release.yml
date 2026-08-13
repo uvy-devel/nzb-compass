@@ -37,7 +37,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           git python python-gobject gtk4 libadwaita desktop-file-utils
-          python-build python-installer python-wheel
+          python-build python-installer python-setuptools python-wheel
       - name: Validate tag and declared version
         shell: bash
         run: |

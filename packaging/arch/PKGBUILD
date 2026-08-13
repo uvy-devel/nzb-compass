@@ -6,7 +6,7 @@ arch=('any')
 url="https://github.com/uvy-devel/nzb-compass"
 license=('MIT')
 depends=('python' 'python-gobject' 'gtk4' 'libadwaita')
-makedepends=('python-build' 'python-installer' 'python-wheel')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=('SKIP')
 

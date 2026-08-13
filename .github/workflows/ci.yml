@@ -19,7 +19,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           python python-gobject gtk4 libadwaita desktop-file-utils
-          python-build python-installer python-wheel
+          python-build python-installer python-setuptools python-wheel
       - name: Run tests
         run: make test
       - name: Validate desktop launcher and versions
