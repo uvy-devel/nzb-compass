@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=NZB Compass
+Comment=Search Prowlarr and manage SABnzbd downloads
+Exec=nzb-compass
+Icon=io.github.nzbcompass.NzbCompass
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=Usenet;NZB;Prowlarr;SABnzbd;Download;
+StartupNotify=true
+StartupWMClass=io.github.nzbcompass.NzbCompass

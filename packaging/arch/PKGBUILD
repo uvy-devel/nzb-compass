@@ -1,0 +1,23 @@
+pkgname=nzb-compass
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Native GTK client for Prowlarr and SABnzbd"
+arch=('any')
+license=('custom')
+depends=('python' 'python-gobject' 'gtk4' 'libadwaita')
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  install -d "${pkgdir}/usr/lib/nzb-compass"
+  cp -r src/nzb_compass "${pkgdir}/usr/lib/nzb-compass/"
+
+  install -Dm755 packaging/nzb-compass "${pkgdir}/usr/bin/nzb-compass"
+  install -Dm644 data/io.github.nzbcompass.NzbCompass.desktop \
+    "${pkgdir}/usr/share/applications/io.github.nzbcompass.NzbCompass.desktop"
+  install -Dm644 data/io.github.nzbcompass.NzbCompass.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/io.github.nzbcompass.NzbCompass.svg"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/nzb-compass/README.md"
+}
