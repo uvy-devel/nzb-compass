@@ -114,8 +114,8 @@ jobs:
             --destination site/x86_64 \
             --prune
           repo-add site/x86_64/nzb-compass.db.tar.gz site/x86_64/*.pkg.tar.zst
-          cp site/x86_64/nzb-compass.db.tar.gz site/x86_64/nzb-compass.db
-          cp site/x86_64/nzb-compass.files.tar.gz site/x86_64/nzb-compass.files
+          cp --remove-destination site/x86_64/nzb-compass.db.tar.gz site/x86_64/nzb-compass.db
+          cp --remove-destination site/x86_64/nzb-compass.files.tar.gz site/x86_64/nzb-compass.files
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
