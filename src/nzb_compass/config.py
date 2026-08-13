@@ -13,6 +13,8 @@ class Settings:
     sabnzbd_url: str = "http://localhost:8080"
     sabnzbd_api_key: str = ""
     sabnzbd_category: str = ""
+    sabnzbd_priority: int = -100
+    sabnzbd_post_processing: int = -1
     disabled_indexer_ids: list[int] = field(default_factory=list)
 
     @classmethod

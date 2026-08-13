@@ -1,0 +1,132 @@
+name: Release and publish Pacman repository
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to publish (used once for v0.4.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release-pages
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Install package dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed
+          git python python-gobject gtk4 libadwaita desktop-file-utils
+          python-build python-installer python-wheel
+      - name: Validate tag and declared version
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          test "$RELEASE_TAG" = "v$version"
+          if test -f packaging/check_version.py; then
+            python packaging/check_version.py "$version"
+          else
+            test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" = "$version"
+          fi
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA" || test "$GITHUB_EVENT_NAME" = workflow_dispatch
+      - name: Build Arch package as an unprivileged user
+        shell: bash
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- make package-arch
+      - name: Collect package
+        shell: bash
+        run: |
+          mkdir release-package
+          find output outputs -maxdepth 1 -type f -name '*.pkg.tar.zst' \
+            -exec cp '{}' release-package/ \; 2>/dev/null || true
+          test "$(find release-package -type f -name '*.pkg.tar.zst' | wc -l)" -eq 1
+          sha256sum release-package/*.pkg.tar.zst > release-package/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: release-package/
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: arch-package
+          path: release-package
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-package/* \
+              --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" release-package/* \
+              --verify-tag --generate-notes \
+              --title "NZB Compass ${RELEASE_TAG#v}" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+  build-pages-repository:
+    needs: github-release
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Check out current publishing scripts
+        uses: actions/checkout@v6
+        with:
+          ref: main
+      - name: Install repository tools
+        run: pacman -Syu --noconfirm --needed python pacman
+      - uses: actions/configure-pages@v5
+      - name: Download retained packages and build repository database
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python packaging/publish_repo.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --destination site/x86_64 \
+            --prune
+          repo-add site/x86_64/nzb-compass.db.tar.gz site/x86_64/*.pkg.tar.zst
+          cp site/x86_64/nzb-compass.db.tar.gz site/x86_64/nzb-compass.db
+          cp site/x86_64/nzb-compass.files.tar.gz site/x86_64/nzb-compass.files
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy-pages:
+    needs: build-pages-repository
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pacman repository to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

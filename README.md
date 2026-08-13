@@ -1,78 +1,130 @@
 # NZB Compass
 
-NZB Compass is a native Linux desktop app for searching all enabled **Usenet**
-indexers in Prowlarr and sending selected NZBs to SABnzbd. It uses GTK 4 and
-Libadwaita, follows the system light/dark theme, and keeps network work off the
-interface thread.
+NZB Compass is a native Linux desktop application for searching all enabled
+Usenet indexers in Prowlarr and sending selected NZBs to SABnzbd. It uses GTK 4
+and Libadwaita, follows the system light/dark theme, and keeps network work off
+the interface thread.
 
-## Current features
+This is primarily a personal project that I am making public because it may be
+useful to other Prowlarr and SABnzbd users. Development has been heavily
+AI-assisted (or "vibe-coded"). I am not a professional software developer, so
+compatibility with every Linux distribution and environment is not guaranteed.
+The software is provided as-is under the MIT license.
 
-- Search through Prowlarr's `/api/v1/search` endpoint
-- Browse all configured Usenet indexers and include or exclude them per search
-- Show whether each indexer is disabled in Prowlarr or unable to search
-- Filter returned releases instantly by content type or source indexer
-- Group console and PC/Games categories into one convenient Games filter
-- Usenet-only results with title, indexer, size, age, categories, and grab count
-- Sort by newest, size, or indexer
-- Detailed release panel with a link back to the source page
-- Direct handoff flow: send an authenticated Prowlarr URL to SABnzbd via `addurl`
-- Rebase Prowlarr download links onto the configured host for Docker and reverse proxies
-- Optional SABnzbd category
-- Live SABnzbd queue with progress and time remaining
-- Native SABnzbd dashboard with speed, remaining size, ETA, and queue totals
-- Pause/resume controls, automatic refresh, and recent download history
-- Friendly connection and authentication errors
-- Local settings file restricted to the current user (`0600`)
+## Features
 
-## Run it
+- Search selected Usenet indexers through Prowlarr.
+- Filter and sort results by content type, source, age, and size.
+- Send authenticated Prowlarr download URLs directly to SABnzbd.
+- Choose SABnzbd category, priority, and post-processing defaults.
+- Monitor SABnzbd bandwidth, queue progress, remaining size, and ETA.
+- Pause, resume, retry, or remove individual jobs.
+- Review recent history and SABnzbd-provided failure reasons.
+- Support reverse-proxy subpaths and Docker-host URL rebasing.
+- Store local connection settings with user-only file permissions (`0600`).
 
-Requirements: Python 3.11+, GTK 4, Libadwaita, and PyGObject.
+## Install on Arch Linux or CachyOS
 
-```bash
-python3 -m venv --system-site-packages .venv
-.venv/bin/pip install -e .
-.venv/bin/nzb-compass
+NZB Compass has a small unsigned Pacman repository hosted with GitHub Pages.
+Add this block to `/etc/pacman.conf`:
+
+```ini
+[nzb-compass]
+SigLevel = Optional TrustAll
+Server = https://uvy-devel.github.io/nzb-compass/$arch
 ```
 
-For an offline install on a system that already has the requirements, add
-`--no-build-isolation --no-deps` to the `pip install` command.
+Refresh Pacman and install the application:
 
-For development, it can also run without installation:
+```bash
+sudo pacman -Syu
+sudo pacman -S nzb-compass
+```
+
+Once installed, future releases arrive through the normal system update:
+
+```bash
+sudo pacman -Syu
+```
+
+The repository is initially unsigned. `Optional TrustAll` allows Pacman to
+install those unsigned packages, which means package authenticity depends on
+HTTPS, this GitHub account, and the repository's GitHub Actions workflow rather
+than a personal signing key. Package and database signing can be added later
+without changing the application itself.
+
+## Configure and run
+
+Launch **NZB Compass** from the desktop application menu, then open Settings and
+enter:
+
+1. The base URL and API key from Prowlarr → Settings → General.
+2. The base URL and API key from SABnzbd → Config → General.
+3. Optionally, a SABnzbd category, priority, and post-processing mode.
+
+The defaults expect Prowlarr at `http://localhost:9696` and SABnzbd at
+`http://localhost:8080`. Reverse-proxy subpaths are supported. Personal settings
+remain in `~/.config/nzb-compass/config.json` and are never part of this source
+repository.
+
+## Develop or run from source
+
+Required runtime components are Python 3.11+, GTK 4, Libadwaita, and PyGObject.
+On Arch Linux/CachyOS, install the development and packaging dependencies with:
+
+```bash
+sudo pacman -S --needed base-devel git python python-gobject gtk4 libadwaita \
+  desktop-file-utils python-build python-installer python-wheel
+```
+
+Run directly from the source checkout:
 
 ```bash
 PYTHONPATH=src python3 -m nzb_compass
 ```
 
-Open **Settings** and enter:
-
-1. The base URL and API key from Prowlarr → Settings → General.
-2. The base URL and API key from SABnzbd → Config → General.
-3. Optionally, a SABnzbd category to apply to every download.
-
-The defaults assume Prowlarr is at `http://localhost:9696` and SABnzbd is at
-`http://localhost:8080`. Reverse-proxy subpaths are supported.
-
-## Test
+Run the tests:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+make test
 ```
 
-No requests are made to third-party metadata services. The release information
-shown is the metadata Prowlarr returns from your configured indexers.
-
-## Install on Arch Linux or CachyOS
-
-Install the packaged build once with:
+Build and install a local Arch package from the current commit:
 
 ```bash
-sudo pacman -U nzb-compass-0.4.0-1-any.pkg.tar.zst
+make package-arch
+sudo pacman -U output/nzb-compass-*-any.pkg.tar.zst
 ```
 
-NZB Compass will then appear in the desktop application launcher. Remove it
-later with `sudo pacman -R nzb-compass`; personal connection settings are kept
-in `~/.config/nzb-compass` unless removed separately.
+The build uses `git archive`, so commit the source you intend to package first.
+Generated wheels, packages, caches, and `makepkg` work directories are ignored
+by Git.
 
-The package recipe, desktop launcher, and icon are included in the project.
-Maintainers can produce a fresh package with `make package-arch`; see
-`packaging/README.md` for details.
+## Publish a release
+
+Ordinary commits and pushes run tests but do not publish packages. To publish:
+
+```bash
+make set-version VERSION=0.4.5
+git add .
+git commit -m "Prepare 0.4.5"
+git push
+git tag -a v0.4.5 -m "NZB Compass 0.4.5"
+git push origin v0.4.5
+```
+
+The tag must match the version declared by the project. A `v*` tag triggers
+GitHub Actions to test and build the package, create a GitHub Release, retain
+the `v0.4.0` package plus the two newest later packages, rebuild the Pacman
+database, and deploy it to GitHub Pages.
+
+See [packaging/README.md](packaging/README.md) for maintainer details and the
+one-time GitHub Pages setup.
+
+## Limitations
+
+- The graphical application targets Linux systems with GTK 4 and Libadwaita.
+- The automated binary package targets Arch Linux and Arch-derived systems.
+- Prowlarr and SABnzbd API compatibility can change in future upstream releases.
+- No requests are made to third-party metadata services; displayed release
+  information comes from the configured Prowlarr indexers.

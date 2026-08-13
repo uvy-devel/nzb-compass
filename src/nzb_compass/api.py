@@ -141,6 +141,13 @@ class SabnzbdClient:
         payload = self._request({"mode": "version", "output": "json"})
         return str(payload.get("version") or "Connected")
 
+    def categories(self) -> list[str]:
+        payload = self._request({"mode": "get_cats", "output": "json"})
+        categories = payload.get("categories")
+        if not isinstance(categories, list):
+            raise ApiError("SABnzbd returned an unexpected category response.")
+        return [str(category) for category in categories]
+
     def add_nzb(self, contents: bytes, filename: str) -> str:
         fields = {
             "mode": "addfile",
@@ -149,6 +156,8 @@ class SabnzbdClient:
         }
         if self.settings.sabnzbd_category:
             fields["cat"] = self.settings.sabnzbd_category
+        fields["priority"] = str(self.settings.sabnzbd_priority)
+        fields["pp"] = str(self.settings.sabnzbd_post_processing)
         body, content_type = _multipart(fields, "nzbfile", filename, contents)
         request = Request(
             _api_url(self.settings.sabnzbd_url, "/api"),
@@ -171,6 +180,8 @@ class SabnzbdClient:
         }
         if self.settings.sabnzbd_category:
             values["cat"] = self.settings.sabnzbd_category
+        values["priority"] = str(self.settings.sabnzbd_priority)
+        values["pp"] = str(self.settings.sabnzbd_post_processing)
         payload = self._request(values)
         if not payload.get("status"):
             raise ApiError(str(payload.get("error") or "SABnzbd did not accept the URL."))
@@ -186,6 +197,7 @@ class SabnzbdClient:
         slots = queue_data.get("slots") or []
         queue = [
             QueueItem(
+                nzo_id=str(slot.get("nzo_id") or ""),
                 name=slot.get("filename") or slot.get("name") or "Untitled download",
                 status=slot.get("status") or "Queued",
                 percentage=float(slot.get("percentage") or 0),
@@ -198,14 +210,22 @@ class SabnzbdClient:
         history_data = history_payload.get("history") or {}
         history = [
             HistoryItem(
+                nzo_id=str(slot.get("nzo_id") or ""),
                 name=slot.get("name") or slot.get("nzb_name") or "Untitled download",
                 status=slot.get("status") or "Unknown",
                 size=slot.get("size") or "",
                 category=slot.get("category") or slot.get("cat") or "",
                 completed=int(slot.get("completed") or 0) or None,
+                failure_reason=" ".join(
+                    str(slot.get("fail_message") or "").split()
+                ),
             )
             for slot in (history_data.get("slots") or [])
         ]
+        try:
+            kilobytes_per_second = float(queue_data.get("kbpersec") or 0)
+        except (TypeError, ValueError):
+            kilobytes_per_second = 0
         return SabDashboard(
             paused=bool(queue_data.get("paused", False)),
             status=queue_data.get("status") or "Idle",
@@ -214,6 +234,8 @@ class SabnzbdClient:
             size_left=queue_data.get("sizeleft") or "0 B",
             queue_size=queue_data.get("size") or "0 B",
             queue_count=int(queue_data.get("noofslots") or len(queue)),
+            history_count=int(history_data.get("noofslots") or len(history)),
+            bandwidth_mbps=max(0, kilobytes_per_second) * 8 / 1000,
             queue=queue,
             history=history,
         )
@@ -223,6 +245,47 @@ class SabnzbdClient:
         payload = self._request({"mode": mode, "output": "json"})
         if payload.get("status") is False:
             raise ApiError(f"SABnzbd could not {mode} the queue.")
+
+    def set_job_paused(self, nzo_id: str, paused: bool) -> None:
+        action = "pause" if paused else "resume"
+        self._checked_action(
+            {"mode": "queue", "name": action, "value": nzo_id, "output": "json"},
+            f"SABnzbd could not {action} the job.",
+        )
+
+    def delete_queue_job(self, nzo_id: str, delete_files: bool = False) -> None:
+        self._checked_action(
+            {
+                "mode": "queue",
+                "name": "delete",
+                "value": nzo_id,
+                "del_files": "1" if delete_files else "0",
+                "output": "json",
+            },
+            "SABnzbd could not remove the job.",
+        )
+
+    def retry_history_job(self, nzo_id: str) -> None:
+        self._checked_action(
+            {"mode": "retry", "value": nzo_id, "output": "json"},
+            "SABnzbd could not retry the job.",
+        )
+
+    def delete_history_job(self, nzo_id: str) -> None:
+        self._checked_action(
+            {
+                "mode": "history",
+                "name": "delete",
+                "value": nzo_id,
+                "output": "json",
+            },
+            "SABnzbd could not remove the history item.",
+        )
+
+    def _checked_action(self, params: dict[str, str], error: str) -> None:
+        payload = self._request(params)
+        if payload.get("status") is False:
+            raise ApiError(str(payload.get("error") or error))
 
     def _request(self, params: dict[str, str]) -> dict[str, Any]:
         values = {**params, "apikey": self.settings.sabnzbd_api_key}

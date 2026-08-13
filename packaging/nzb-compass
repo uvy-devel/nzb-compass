@@ -1,4 +1,0 @@
-#!/bin/sh
-export PYTHONPATH="/usr/lib/nzb-compass${PYTHONPATH:+:$PYTHONPATH}"
-exec /usr/bin/python -m nzb_compass "$@"
-

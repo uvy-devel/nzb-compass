@@ -19,7 +19,22 @@ from .config import Settings
 from .models import HistoryItem, Indexer, QueueItem, Release, SabDashboard
 
 
-APP_ID = "io.github.nzbcompass.NzbCompass"
+APP_ID = "io.github.uvy-devel.NzbCompass"
+SAB_PRIORITIES = [
+    ("Default (category)", -100),
+    ("Paused", -2),
+    ("Low", -1),
+    ("Normal", 0),
+    ("High", 1),
+    ("Force", 2),
+]
+SAB_POST_PROCESSING = [
+    ("Default (category)", -1),
+    ("None", 0),
+    ("Repair", 1),
+    ("Repair and unpack", 2),
+    ("Repair, unpack, and delete", 3),
+]
 
 
 def _async(
@@ -68,6 +83,7 @@ class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app: NzbCompassApplication) -> None:
         super().__init__(application=app, title="NZB Compass")
         self.set_default_size(1080, 720)
+        self.set_size_request(640, 520)
         self.settings = Settings.load()
         self.releases: list[Release] = []
         self.indexers: list[Indexer] = []
@@ -131,9 +147,10 @@ class MainWindow(Adw.ApplicationWindow):
         page.append(hero)
 
         search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        search_box.set_halign(Gtk.Align.CENTER)
+        search_box.set_hexpand(True)
         self.search_entry = Gtk.SearchEntry(placeholder_text="Movie, series, game, book…")
-        self.search_entry.set_size_request(540, -1)
+        self.search_entry.set_size_request(260, -1)
+        self.search_entry.set_hexpand(True)
         self.search_entry.connect("activate", self._start_search)
         search_button = Gtk.Button(label="Search")
         search_button.add_css_class("suggested-action")
@@ -142,7 +159,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.search_button = search_button
         search_box.append(self.search_entry)
         search_box.append(search_button)
-        page.append(search_box)
+        search_clamp = Adw.Clamp()
+        search_clamp.set_maximum_size(650)
+        search_clamp.set_child(search_box)
+        page.append(search_clamp)
 
         filter_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         filter_bar.set_halign(Gtk.Align.CENTER)
@@ -275,21 +295,38 @@ class MainWindow(Adw.ApplicationWindow):
         return status
 
     def _queue_page(self) -> Gtk.Widget:
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.set_margin_start(18)
+        outer.set_margin_end(18)
+        outer.set_margin_top(16)
+        outer.set_margin_bottom(24)
+
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(1120)
+        clamp.set_tightening_threshold(900)
+        clamp.set_vexpand(True)
+
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        page.set_margin_start(28)
-        page.set_margin_end(28)
-        page.set_margin_top(16)
-        page.set_margin_bottom(24)
+        page.set_vexpand(True)
+        page.add_css_class("sab-dashboard")
 
         heading_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        heading_row.add_css_class("sab-header-card")
+        sab_icon = Gtk.Image.new_from_icon_name("folder-download-symbolic")
+        sab_icon.set_pixel_size(26)
+        sab_icon.add_css_class("sab-brand-icon")
         heading_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         heading_box.set_hexpand(True)
-        heading = Gtk.Label(label="SABnzbd", xalign=0)
+        heading = Gtk.Label(label="SABnzbd Dashboard", xalign=0)
         heading.add_css_class("title-2")
+        heading.set_ellipsize(3)
         self.sab_state_label = Gtk.Label(label="Connecting…", xalign=0)
-        self.sab_state_label.add_css_class("dim-label")
+        self.sab_state_label.add_css_class("sab-state")
+        self.sab_state_label.set_ellipsize(3)
         heading_box.append(heading)
         heading_box.append(self.sab_state_label)
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        controls.add_css_class("linked")
         self.sab_pause_button = Gtk.Button(
             icon_name="media-playback-pause-symbolic", tooltip_text="Pause downloads"
         )
@@ -298,17 +335,35 @@ class MainWindow(Adw.ApplicationWindow):
         open_sab.connect("clicked", lambda *_: webbrowser.open(self.settings.sabnzbd_url))
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Refresh dashboard")
         refresh.connect("clicked", lambda *_: self.refresh_queue())
+        controls.append(self.sab_pause_button)
+        controls.append(refresh)
+        controls.append(open_sab)
+        heading_row.append(sab_icon)
         heading_row.append(heading_box)
-        heading_row.append(self.sab_pause_button)
-        heading_row.append(open_sab)
-        heading_row.append(refresh)
+        heading_row.append(controls)
         page.append(heading_row)
 
-        stats = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.sab_speed_value = self._stat_card(stats, "Speed", "0 B/s", "network-transmit-receive-symbolic")
-        self.sab_remaining_value = self._stat_card(stats, "Remaining", "0 B", "drive-harddisk-symbolic")
-        self.sab_time_value = self._stat_card(stats, "Time left", "0:00:00", "alarm-symbolic")
-        self.sab_jobs_value = self._stat_card(stats, "Queue", "0 jobs", "view-list-symbolic")
+        stats = Gtk.Grid()
+        stats.set_column_homogeneous(True)
+        stats.set_column_spacing(10)
+        stats.add_css_class("sab-stats")
+        self._sab_stat_icons: list[Gtk.Image] = []
+        self.sab_speed_value = self._stat_card(
+            stats,
+            0,
+            "Bandwidth",
+            "0 B/s  •  0 Mbps",
+            "network-transmit-receive-symbolic",
+        )
+        self.sab_remaining_value = self._stat_card(
+            stats, 1, "Remaining", "0 B", "drive-harddisk-symbolic"
+        )
+        self.sab_time_value = self._stat_card(
+            stats, 2, "Time left", "0:00:00", "alarm-symbolic"
+        )
+        self.sab_jobs_value = self._stat_card(
+            stats, 3, "Queue size", "0 jobs", "view-list-symbolic"
+        )
         page.append(stats)
 
         section_switcher = Gtk.StackSwitcher()
@@ -321,6 +376,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.queue_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.queue_list.add_css_class("boxed-list")
+        self.queue_list.add_css_class("sab-job-list")
         self.queue_status = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.queue_status.set_vexpand(True)
         queue_empty = Adw.StatusPage()
@@ -331,10 +387,13 @@ class MainWindow(Adw.ApplicationWindow):
         queue_scroll = Gtk.ScrolledWindow(vexpand=True)
         queue_scroll.set_child(self.queue_list)
         self.queue_status.add_named(queue_scroll, "items")
-        self.sab_sections.add_titled(self.queue_status, "active", "Queue")
+        self.sab_queue_page = self.sab_sections.add_titled(
+            self.queue_status, "active", "Queue · 0"
+        )
 
         self.history_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.history_list.add_css_class("boxed-list")
+        self.history_list.add_css_class("sab-job-list")
         self.history_status = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         history_empty = Adw.StatusPage()
         history_empty.set_icon_name("document-open-recent-symbolic")
@@ -344,33 +403,58 @@ class MainWindow(Adw.ApplicationWindow):
         history_scroll = Gtk.ScrolledWindow(vexpand=True)
         history_scroll.set_child(self.history_list)
         self.history_status.add_named(history_scroll, "items")
-        self.sab_sections.add_titled(self.history_status, "history", "History")
+        self.sab_history_page = self.sab_sections.add_titled(
+            self.history_status, "history", "History · 0"
+        )
         page.append(self.sab_sections)
-        return page
+        clamp.set_child(page)
+        outer.append(clamp)
+
+        compact = Adw.Breakpoint.new(
+            Adw.BreakpointCondition.parse("max-width: 760sp")
+        )
+        compact.add_setter(outer, "margin-start", 10)
+        compact.add_setter(outer, "margin-end", 10)
+        compact.add_setter(heading_row, "spacing", 8)
+        compact.add_setter(heading, "label", "SABnzbd")
+        compact.add_setter(sab_icon, "visible", False)
+        for stat_icon in self._sab_stat_icons:
+            compact.add_setter(stat_icon, "visible", False)
+        self.add_breakpoint(compact)
+        return outer
 
     def _stat_card(
-        self, parent: Gtk.Box, title: str, value: str, icon_name: str
+        self,
+        parent: Gtk.Grid,
+        column: int,
+        title: str,
+        value: str,
+        icon_name: str,
     ) -> Gtk.Label:
         card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         card.set_hexpand(True)
-        card.set_margin_start(14)
-        card.set_margin_end(14)
-        card.set_margin_top(12)
-        card.set_margin_bottom(12)
+        card.set_margin_start(10)
+        card.set_margin_end(10)
+        card.set_margin_top(10)
+        card.set_margin_bottom(10)
         card.add_css_class("stat-card")
         icon = Gtk.Image.new_from_icon_name(icon_name)
-        icon.set_pixel_size(22)
+        icon.set_pixel_size(20)
         icon.add_css_class("accent")
+        self._sab_stat_icons.append(icon)
         labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        labels.set_hexpand(True)
         caption = Gtk.Label(label=title, xalign=0)
         caption.add_css_class("dim-label")
         value_label = Gtk.Label(label=value, xalign=0)
         value_label.add_css_class("heading")
+        value_label.set_ellipsize(3)
+        value_label.set_tooltip_text(value)
         labels.append(caption)
         labels.append(value_label)
         card.append(icon)
         card.append(labels)
-        parent.append(card)
+        parent.attach(card, column, 0, 1, 1)
         return value_label
 
     def _start_search(self, *_args: object) -> None:
@@ -735,7 +819,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.sab_pause_button.set_tooltip_text(
             "Resume downloads" if dashboard.paused else "Pause downloads"
         )
-        self.sab_speed_value.set_label(dashboard.speed)
+        bandwidth = f"{dashboard.speed}  •  {dashboard.bandwidth_label}"
+        self.sab_speed_value.set_label(bandwidth)
+        self.sab_speed_value.set_tooltip_text(bandwidth)
         remaining = dashboard.size_left
         if dashboard.queue_size and dashboard.queue_size != dashboard.size_left:
             remaining = f"{dashboard.size_left} / {dashboard.queue_size}"
@@ -744,6 +830,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.sab_jobs_value.set_label(
             f"{dashboard.queue_count} job{'s' if dashboard.queue_count != 1 else ''}"
         )
+        self.sab_queue_page.set_title(f"Queue · {dashboard.queue_count}")
+        self.sab_history_page.set_title(f"History · {dashboard.history_count}")
         self._render_queue(dashboard.queue)
         self._render_history(dashboard.history)
 
@@ -756,18 +844,53 @@ class MainWindow(Adw.ApplicationWindow):
         while child := self.queue_list.get_first_child():
             self.queue_list.remove(child)
         for item in items:
-            details = [item.status, item.size]
+            details = [item.size]
             if item.time_left:
                 details.append(f"{item.time_left} left")
             if item.category:
                 details.append(item.category)
             row = Adw.ActionRow(title=item.name, subtitle="  •  ".join(details))
+            row.set_title_lines(1)
+            row.set_subtitle_lines(1)
+            status = Gtk.Label(label=item.status)
+            status.add_css_class("sab-status-pill")
+            if item.status.lower() in {"paused", "failed"}:
+                status.add_css_class(f"sab-status-{item.status.lower()}")
+            status.set_valign(Gtk.Align.CENTER)
+            row.add_suffix(status)
             progress = Gtk.ProgressBar(fraction=max(0, min(100, item.percentage)) / 100)
-            progress.set_size_request(150, -1)
+            progress.set_size_request(110, -1)
             progress.set_valign(Gtk.Align.CENTER)
             progress.set_show_text(True)
             progress.set_text(f"{item.percentage:.0f}%")
             row.add_suffix(progress)
+            if item.nzo_id:
+                actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                paused = item.status.lower() == "paused"
+                pause = Gtk.Button(
+                    icon_name=(
+                        "media-playback-start-symbolic"
+                        if paused
+                        else "media-playback-pause-symbolic"
+                    ),
+                    tooltip_text="Resume job" if paused else "Pause job",
+                )
+                pause.connect(
+                    "clicked",
+                    lambda button, job=item, target=not paused: self._set_sab_job_paused(
+                        job, target, button
+                    ),
+                )
+                remove = Gtk.Button(
+                    icon_name="user-trash-symbolic", tooltip_text="Remove from queue"
+                )
+                remove.add_css_class("destructive-action")
+                remove.connect(
+                    "clicked", lambda _button, job=item: self._confirm_remove_queue_job(job)
+                )
+                actions.append(pause)
+                actions.append(remove)
+                row.add_suffix(actions)
             self.queue_list.append(row)
         self.queue_status.set_visible_child_name("items" if items else "empty")
 
@@ -775,8 +898,20 @@ class MainWindow(Adw.ApplicationWindow):
         while child := self.history_list.get_first_child():
             self.history_list.remove(child)
         for item in items:
-            details = [value for value in (item.status, item.size, item.category, item.completed_label) if value]
-            row = Adw.ActionRow(title=item.name, subtitle="  •  ".join(details))
+            details = [
+                value
+                for value in (item.status, item.size, item.category, item.completed_label)
+                if value
+            ]
+            subtitle = "  •  ".join(details)
+            if item.failure_description:
+                subtitle = f"{subtitle}\n{item.failure_description}"
+            row = Adw.ActionRow(title=item.name, subtitle=subtitle)
+            row.set_title_lines(1)
+            row.set_subtitle_lines(1)
+            if item.failure_description:
+                row.set_subtitle_lines(2)
+                row.set_tooltip_text(item.failure_description)
             icon_name = (
                 "emblem-ok-symbolic"
                 if item.status.lower() == "completed"
@@ -785,8 +920,92 @@ class MainWindow(Adw.ApplicationWindow):
             icon = Gtk.Image.new_from_icon_name(icon_name)
             icon.set_tooltip_text(item.status)
             row.add_prefix(icon)
+            if item.nzo_id:
+                actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                if item.status.lower() == "failed":
+                    retry = Gtk.Button(
+                        icon_name="view-refresh-symbolic", tooltip_text="Retry job"
+                    )
+                    retry.connect(
+                        "clicked", lambda button, job=item: self._retry_history_job(job, button)
+                    )
+                    actions.append(retry)
+                remove = Gtk.Button(
+                    icon_name="edit-delete-symbolic", tooltip_text="Remove from history"
+                )
+                remove.connect(
+                    "clicked", lambda _button, job=item: self._remove_history_job(job)
+                )
+                actions.append(remove)
+                row.add_suffix(actions)
             self.history_list.append(row)
         self.history_status.set_visible_child_name("items" if items else "empty")
+
+    def _set_sab_job_paused(
+        self, item: QueueItem, paused: bool, button: Gtk.Button
+    ) -> None:
+        button.set_sensitive(False)
+        action = "Paused" if paused else "Resumed"
+        self._run_sab_action(
+            lambda: SabnzbdClient(self.settings).set_job_paused(item.nzo_id, paused),
+            f"{action} “{item.name}”",
+            button,
+        )
+
+    def _confirm_remove_queue_job(self, item: QueueItem) -> None:
+        dialog = Adw.MessageDialog.new(
+            self,
+            "Remove this job?",
+            f"“{item.name}” will be removed from the SABnzbd queue. Already downloaded files will be kept.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("remove", "Remove")
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+
+        def responded(_dialog: Adw.MessageDialog, response: str) -> None:
+            if response == "remove":
+                self._run_sab_action(
+                    lambda: SabnzbdClient(self.settings).delete_queue_job(item.nzo_id),
+                    f"Removed “{item.name}” from the queue",
+                )
+
+        dialog.connect("response", responded)
+        dialog.present()
+
+    def _retry_history_job(self, item: HistoryItem, button: Gtk.Button) -> None:
+        button.set_sensitive(False)
+        self._run_sab_action(
+            lambda: SabnzbdClient(self.settings).retry_history_job(item.nzo_id),
+            f"Retrying “{item.name}”",
+            button,
+        )
+
+    def _remove_history_job(self, item: HistoryItem) -> None:
+        self._run_sab_action(
+            lambda: SabnzbdClient(self.settings).delete_history_job(item.nzo_id),
+            f"Removed “{item.name}” from history",
+        )
+
+    def _run_sab_action(
+        self,
+        work: Callable[[], None],
+        message: str,
+        button: Gtk.Button | None = None,
+    ) -> None:
+        def done(_result: None) -> None:
+            if button:
+                button.set_sensitive(True)
+            self._toast(message)
+            self.refresh_queue()
+
+        def failed(exc: Exception) -> None:
+            if button:
+                button.set_sensitive(True)
+            self._request_failed(exc)
+
+        _async(work, done, failed)
 
     def _toggle_sab_pause(self, button: Gtk.Button) -> None:
         target = not self._sab_paused
@@ -861,9 +1080,35 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.sab_key.set_text(settings.sabnzbd_api_key)
         self.sab_category = Adw.EntryRow(title="Category (optional)")
         self.sab_category.set_text(settings.sabnzbd_category)
+        self.sab_priority = Adw.ComboRow(
+            title="Priority",
+            model=Gtk.StringList.new([label for label, _value in SAB_PRIORITIES]),
+        )
+        self.sab_priority.set_selected(
+            next(
+                (index for index, (_label, value) in enumerate(SAB_PRIORITIES) if value == settings.sabnzbd_priority),
+                0,
+            )
+        )
+        self.sab_post_processing = Adw.ComboRow(
+            title="Post-processing",
+            model=Gtk.StringList.new([label for label, _value in SAB_POST_PROCESSING]),
+        )
+        self.sab_post_processing.set_selected(
+            next(
+                (
+                    index
+                    for index, (_label, value) in enumerate(SAB_POST_PROCESSING)
+                    if value == settings.sabnzbd_post_processing
+                ),
+                0,
+            )
+        )
         sab.add(self.sab_url)
         sab.add(self.sab_key)
         sab.add(self.sab_category)
+        sab.add(self.sab_priority)
+        sab.add(self.sab_post_processing)
         self.sab_test = Adw.ActionRow(title="Connection status", subtitle="Not tested")
         sab_button = Gtk.Button(label="Test")
         sab_button.set_valign(Gtk.Align.CENTER)
@@ -897,6 +1142,10 @@ class SettingsWindow(Adw.PreferencesWindow):
             sabnzbd_url=self.sab_url.get_text().strip().rstrip("/"),
             sabnzbd_api_key=self.sab_key.get_text().strip(),
             sabnzbd_category=self.sab_category.get_text().strip(),
+            sabnzbd_priority=SAB_PRIORITIES[self.sab_priority.get_selected()][1],
+            sabnzbd_post_processing=SAB_POST_PROCESSING[
+                self.sab_post_processing.get_selected()
+            ][1],
             disabled_indexer_ids=self._disabled_indexer_ids,
         )
 
@@ -918,15 +1167,30 @@ class SettingsWindow(Adw.PreferencesWindow):
         button.set_sensitive(False)
         self.sab_test.set_subtitle("Connecting…")
 
-        def done(version: str) -> None:
+        def work() -> tuple[str, list[str]]:
+            client = SabnzbdClient(self._current_settings())
+            return client.test(), client.categories()
+
+        def done(result: tuple[str, list[str]]) -> None:
             button.set_sensitive(True)
-            self.sab_test.set_subtitle(f"Connected • version {version}")
+            version, categories = result
+            selected = self.sab_category.get_text().strip()
+            if selected and selected not in categories:
+                self.sab_test.set_subtitle(
+                    f"Connected • version {version} • category “{selected}” was not found"
+                )
+                self.sab_category.add_css_class("error")
+            else:
+                self.sab_test.set_subtitle(
+                    f"Connected • version {version} • {len(categories)} categories"
+                )
+                self.sab_category.remove_css_class("error")
 
         def failed(exc: Exception) -> None:
             button.set_sensitive(True)
             self.sab_test.set_subtitle(str(exc))
 
-        _async(lambda: SabnzbdClient(self._current_settings()).test(), done, failed)
+        _async(work, done, failed)
 
 
 CSS = """
@@ -939,6 +1203,30 @@ CSS = """
   border-radius: 12px;
 }
 .category-label { color: @accent_color; font-size: 0.88em; }
+.sab-header-card {
+  background: @card_bg_color;
+  border: 1px solid alpha(@borders, 0.65);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px alpha(black, 0.1);
+}
+.sab-brand-icon {
+  background: alpha(@accent_bg_color, 0.16);
+  color: @accent_color;
+  border-radius: 10px;
+  padding: 9px;
+}
+.sab-state { color: @accent_color; font-weight: 600; }
+.sab-status-pill {
+  background: alpha(@accent_bg_color, 0.14);
+  color: @accent_color;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.82em;
+  font-weight: 700;
+}
+.sab-status-paused { color: @warning_color; background: alpha(@warning_color, 0.14); }
+.sab-status-failed { color: @error_color; background: alpha(@error_color, 0.14); }
 .stat-card {
   background: @card_bg_color;
   border: 1px solid alpha(@borders, 0.6);

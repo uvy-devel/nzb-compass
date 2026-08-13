@@ -1,7 +1,7 @@
 import unittest
 from datetime import timezone
 
-from nzb_compass.models import Indexer, Release
+from nzb_compass.models import HistoryItem, Indexer, Release
 
 
 class ReleaseTests(unittest.TestCase):
@@ -79,3 +79,24 @@ class ReleaseTests(unittest.TestCase):
 
         self.assertEqual(movie.content_type, "Movies")
         self.assertEqual(television.content_type, "TV")
+
+
+class HistoryItemTests(unittest.TestCase):
+    def test_failed_item_explains_when_sab_omits_the_cause(self) -> None:
+        item = HistoryItem(
+            nzo_id="SABnzbd_nzo_failed",
+            name="Broken download",
+            status="Failed",
+        )
+
+        self.assertIn("did not report a specific cause", item.failure_description)
+        self.assertIn("job log", item.failure_description)
+
+    def test_completed_item_has_no_failure_description(self) -> None:
+        item = HistoryItem(
+            nzo_id="SABnzbd_nzo_complete",
+            name="Finished download",
+            status="Completed",
+        )
+
+        self.assertEqual(item.failure_description, "")

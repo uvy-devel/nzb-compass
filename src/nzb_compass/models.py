@@ -129,6 +129,7 @@ class Release:
 
 @dataclass(slots=True)
 class QueueItem:
+    nzo_id: str
     name: str
     status: str
     percentage: float
@@ -139,11 +140,24 @@ class QueueItem:
 
 @dataclass(slots=True)
 class HistoryItem:
+    nzo_id: str
     name: str
     status: str
     size: str = ""
     category: str = ""
     completed: int | None = None
+    failure_reason: str = ""
+
+    @property
+    def failure_description(self) -> str:
+        if self.status.lower() != "failed":
+            return ""
+        if self.failure_reason:
+            return f"Reason: {self.failure_reason}"
+        return (
+            "Reason: SABnzbd did not report a specific cause. "
+            "Open SABnzbd to inspect the job log."
+        )
 
     @property
     def completed_label(self) -> str:
@@ -168,8 +182,16 @@ class SabDashboard:
     size_left: str
     queue_size: str
     queue_count: int
+    history_count: int = 0
+    bandwidth_mbps: float = 0.0
     queue: list[QueueItem] = field(default_factory=list)
     history: list[HistoryItem] = field(default_factory=list)
+
+    @property
+    def bandwidth_label(self) -> str:
+        if self.bandwidth_mbps < 0.05:
+            return "0 Mbps"
+        return f"{self.bandwidth_mbps:.1f} Mbps"
 
 
 @dataclass(slots=True)

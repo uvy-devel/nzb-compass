@@ -109,12 +109,14 @@ class ApiHelpersTests(unittest.TestCase):
                     "paused": False,
                     "status": "Downloading",
                     "speed": "12.4 MB/s",
+                    "kbpersec": "1550.0",
                     "timeleft": "0:04:12",
                     "sizeleft": "2.1 GB",
                     "size": "4.0 GB",
                     "noofslots": 1,
                     "slots": [
                         {
+                            "nzo_id": "SABnzbd_nzo_queue",
                             "filename": "Example",
                             "status": "Downloading",
                             "percentage": "48",
@@ -127,7 +129,12 @@ class ApiHelpersTests(unittest.TestCase):
             {
                 "history": {
                     "slots": [
-                        {"name": "Finished", "status": "Completed", "size": "1.0 GB"}
+                        {
+                            "nzo_id": "SABnzbd_nzo_history",
+                            "name": "Finished",
+                            "status": "Completed",
+                            "size": "1.0 GB",
+                        }
                     ]
                 }
             },
@@ -137,6 +144,89 @@ class ApiHelpersTests(unittest.TestCase):
             dashboard = client.dashboard()
 
         self.assertEqual(dashboard.speed, "12.4 MB/s")
+        self.assertEqual(dashboard.bandwidth_mbps, 12.4)
+        self.assertEqual(dashboard.bandwidth_label, "12.4 Mbps")
         self.assertEqual(dashboard.queue_count, 1)
+        self.assertEqual(dashboard.history_count, 1)
+        self.assertEqual(dashboard.queue[0].nzo_id, "SABnzbd_nzo_queue")
         self.assertEqual(dashboard.queue[0].percentage, 48)
+        self.assertEqual(dashboard.history[0].nzo_id, "SABnzbd_nzo_history")
         self.assertEqual(dashboard.history[0].status, "Completed")
+
+    def test_sab_failed_history_includes_normalized_reason(self) -> None:
+        client = SabnzbdClient(Settings())
+        responses = [
+            {"queue": {"slots": []}},
+            {
+                "history": {
+                    "slots": [
+                        {
+                            "nzo_id": "SABnzbd_nzo_failed",
+                            "name": "Broken download",
+                            "status": "Failed",
+                            "fail_message": "  Unpacking failed:\n disk is full  ",
+                        }
+                    ]
+                }
+            },
+        ]
+
+        with patch.object(SabnzbdClient, "_request", side_effect=responses):
+            item = client.dashboard().history[0]
+
+        self.assertEqual(item.failure_reason, "Unpacking failed: disk is full")
+        self.assertEqual(
+            item.failure_description, "Reason: Unpacking failed: disk is full"
+        )
+
+    def test_sab_categories_are_parsed(self) -> None:
+        client = SabnzbdClient(Settings())
+        with patch.object(
+            SabnzbdClient,
+            "_request",
+            return_value={"categories": ["*", "movies", "tv"]},
+        ):
+            self.assertEqual(client.categories(), ["*", "movies", "tv"])
+
+    def test_sab_add_url_applies_download_defaults(self) -> None:
+        client = SabnzbdClient(
+            Settings(
+                sabnzbd_category="movies",
+                sabnzbd_priority=1,
+                sabnzbd_post_processing=3,
+            )
+        )
+        with patch.object(
+            SabnzbdClient,
+            "_request",
+            return_value={"status": True, "nzo_ids": ["SABnzbd_nzo_1"]},
+        ) as request:
+            identifier = client.add_url("https://prowlarr.test/download", "Example")
+
+        self.assertEqual(identifier, "SABnzbd_nzo_1")
+        params = request.call_args.args[0]
+        self.assertEqual(params["cat"], "movies")
+        self.assertEqual(params["priority"], "1")
+        self.assertEqual(params["pp"], "3")
+
+    def test_sab_job_actions_use_the_job_identifier(self) -> None:
+        client = SabnzbdClient(Settings())
+        with patch.object(
+            SabnzbdClient, "_request", return_value={"status": True}
+        ) as request:
+            client.set_job_paused("SABnzbd_nzo_1", True)
+            client.retry_history_job("SABnzbd_nzo_2")
+
+        pause_params = request.call_args_list[0].args[0]
+        retry_params = request.call_args_list[1].args[0]
+        self.assertEqual(
+            pause_params,
+            {
+                "mode": "queue",
+                "name": "pause",
+                "value": "SABnzbd_nzo_1",
+                "output": "json",
+            },
+        )
+        self.assertEqual(retry_params["mode"], "retry")
+        self.assertEqual(retry_params["value"], "SABnzbd_nzo_2")
