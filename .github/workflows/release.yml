@@ -28,16 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
-      - name: Check out release tag
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 0
       - name: Install package dependencies
         run: >-
           pacman -Syu --noconfirm --needed
           git python python-gobject gtk4 libadwaita desktop-file-utils
           python-build python-installer python-setuptools python-wheel
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
       - name: Validate tag and declared version
         shell: bash
         run: |

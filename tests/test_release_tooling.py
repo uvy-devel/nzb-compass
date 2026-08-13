@@ -29,6 +29,16 @@ class VersionDeclarationTests(unittest.TestCase):
         self.assertEqual(len(set(versions.values())), 1)
 
 
+class ReleaseWorkflowTests(unittest.TestCase):
+    def test_git_is_installed_before_release_checkout(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertLess(
+            workflow.index("- name: Install package dependencies"),
+            workflow.index("- name: Check out release tag"),
+        )
+
+
 class PublishedRepositoryRetentionTests(unittest.TestCase):
     def test_base_and_two_newest_releases_are_retained(self) -> None:
         releases = [
