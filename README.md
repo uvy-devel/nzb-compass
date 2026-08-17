@@ -5,12 +5,6 @@ Usenet indexers in Prowlarr and sending selected NZBs to SABnzbd. It uses GTK 4
 and Libadwaita, follows the system light/dark theme, and keeps network work off
 the interface thread.
 
-This is primarily a personal project that I am making public because it may be
-useful to other Prowlarr and SABnzbd users. Development has been heavily
-AI-assisted (or "vibe-coded"). I am not a professional software developer, so
-compatibility with every Linux distribution and environment is not guaranteed.
-The software is provided as-is under the MIT license.
-
 ## Features
 
 - Search selected Usenet indexers through Prowlarr.
@@ -23,10 +17,16 @@ The software is provided as-is under the MIT license.
 - Support reverse-proxy subpaths and Docker-host URL rebasing.
 - Store local connection settings with user-only file permissions (`0600`).
 
-## Install on Arch Linux or CachyOS
+## Requirements
 
-NZB Compass has a small unsigned Pacman repository hosted with GitHub Pages.
-Add this block to `/etc/pacman.conf`:
+- Arch Linux, CachyOS, or another Arch-based Linux distribution.
+- A running Prowlarr instance with one or more Usenet indexers configured.
+- A running SABnzbd instance.
+- The base URL and API key for both services.
+
+## Install
+
+Add the NZB Compass package repository to `/etc/pacman.conf`:
 
 ```ini
 [nzb-compass]
@@ -34,92 +34,48 @@ SigLevel = Optional TrustAll
 Server = https://uvy-devel.github.io/nzb-compass/$arch
 ```
 
-Refresh Pacman and install the application:
+Refresh the package databases and install NZB Compass:
 
 ```bash
 sudo pacman -Syu
 sudo pacman -S nzb-compass
 ```
 
-Once installed, future releases arrive through the normal system update:
+The package repository is unsigned. `Optional TrustAll` permits Pacman to
+install its packages without signature verification. Package delivery relies
+on HTTPS, the GitHub repository, and its GitHub Actions release workflow.
+
+## Configure and run
+
+Launch **NZB Compass** from the desktop application menu. Open **Settings** and
+enter:
+
+1. The base URL and API key from **Prowlarr → Settings → General**.
+2. The base URL and API key from **SABnzbd → Config → General**.
+3. Optionally, a SABnzbd category, priority, and post-processing mode.
+
+The default URLs are `http://localhost:9696` for Prowlarr and
+`http://localhost:8080` for SABnzbd. Reverse-proxy subpaths are supported.
+Settings are stored locally in `~/.config/nzb-compass/config.json` with
+user-only permissions.
+
+## Update
+
+NZB Compass updates through the normal system update process:
 
 ```bash
 sudo pacman -Syu
 ```
 
-The repository is initially unsigned. `Optional TrustAll` allows Pacman to
-install those unsigned packages, which means package authenticity depends on
-HTTPS, this GitHub account, and the repository's GitHub Actions workflow rather
-than a personal signing key. Package and database signing can be added later
-without changing the application itself.
-
-## Configure and run
-
-Launch **NZB Compass** from the desktop application menu, then open Settings and
-enter:
-
-1. The base URL and API key from Prowlarr → Settings → General.
-2. The base URL and API key from SABnzbd → Config → General.
-3. Optionally, a SABnzbd category, priority, and post-processing mode.
-
-The defaults expect Prowlarr at `http://localhost:9696` and SABnzbd at
-`http://localhost:8080`. Reverse-proxy subpaths are supported. Personal settings
-remain in `~/.config/nzb-compass/config.json` and are never part of this source
-repository.
-
-## Develop or run from source
-
-Required runtime components are Python 3.11+, GTK 4, Libadwaita, and PyGObject.
-On Arch Linux/CachyOS, install the development and packaging dependencies with:
+## Uninstall
 
 ```bash
-sudo pacman -S --needed base-devel git python python-gobject gtk4 libadwaita \
-  desktop-file-utils python-build python-installer python-wheel
+sudo pacman -Rns nzb-compass
 ```
 
-Run directly from the source checkout:
-
-```bash
-PYTHONPATH=src python3 -m nzb_compass
-```
-
-Run the tests:
-
-```bash
-make test
-```
-
-Build and install a local Arch package from the current commit:
-
-```bash
-make package-arch
-sudo pacman -U output/nzb-compass-*-any.pkg.tar.zst
-```
-
-The build uses `git archive`, so commit the source you intend to package first.
-Generated wheels, packages, caches, and `makepkg` work directories are ignored
-by Git.
-
-## Publish a release
-
-Ordinary commits and pushes run tests but do not publish packages. To publish:
-
-```bash
-make set-version VERSION=0.4.5
-git add .
-git commit -m "Prepare 0.4.5"
-git push
-git tag -a v0.4.5 -m "NZB Compass 0.4.5"
-git push origin v0.4.5
-```
-
-The tag must match the version declared by the project. A `v*` tag triggers
-GitHub Actions to test and build the package, create a GitHub Release, retain
-the `v0.4.0` package plus the two newest later packages, rebuild the Pacman
-database, and deploy it to GitHub Pages.
-
-See [packaging/README.md](packaging/README.md) for maintainer details and the
-one-time GitHub Pages setup.
+Remove the `[nzb-compass]` block from `/etc/pacman.conf` if the package
+repository is no longer needed. User settings can be removed separately from
+`~/.config/nzb-compass/`.
 
 ## Limitations
 
