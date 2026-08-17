@@ -23,7 +23,7 @@ The software is provided as-is under the MIT license.
 - Support reverse-proxy subpaths and Docker-host URL rebasing.
 - Store local connection settings with user-only file permissions (`0600`).
 
-## Install on Arch Linux or CachyOS
+## Install on Arch Linux or Arch Based distributions
 
 NZB Compass has a small unsigned Pacman repository hosted with GitHub Pages.
 Add this block to `/etc/pacman.conf`:
@@ -64,13 +64,12 @@ enter:
 
 The defaults expect Prowlarr at `http://localhost:9696` and SABnzbd at
 `http://localhost:8080`. Reverse-proxy subpaths are supported. Personal settings
-remain in `~/.config/nzb-compass/config.json` and are never part of this source
-repository.
+remain in `~/.config/nzb-compass/config.json`
 
 ## Develop or run from source
 
 Required runtime components are Python 3.11+, GTK 4, Libadwaita, and PyGObject.
-On Arch Linux/CachyOS, install the development and packaging dependencies with:
+On Arch Linux or similar 🤷, install the development and packaging dependencies with:
 
 ```bash
 sudo pacman -S --needed base-devel git python python-gobject gtk4 libadwaita \
