@@ -96,28 +96,6 @@ make package-arch
 sudo pacman -U output/nzb-compass-*-any.pkg.tar.zst
 ```
 
-The build uses `git archive`, so commit the source you intend to package first.
-Generated wheels, packages, caches, and `makepkg` work directories are ignored
-by Git.
-
-## Publish a release
-
-Ordinary commits and pushes run tests but do not publish packages. To publish:
-
-```bash
-make set-version VERSION=0.4.5
-git add .
-git commit -m "Prepare 0.4.5"
-git push
-git tag -a v0.4.5 -m "NZB Compass 0.4.5"
-git push origin v0.4.5
-```
-
-The tag must match the version declared by the project. A `v*` tag triggers
-GitHub Actions to test and build the package, create a GitHub Release, retain
-the `v0.4.0` package plus the two newest later packages, rebuild the Pacman
-database, and deploy it to GitHub Pages.
-
 See [packaging/README.md](packaging/README.md) for maintainer details and the
 one-time GitHub Pages setup.
 
